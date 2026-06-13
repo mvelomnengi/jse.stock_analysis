@@ -1,19 +1,14 @@
 # Import the necessary libraries
 import yfinance as yf
 import numpy as np
+import matplotlib.pyplot as plt
 
-# Define constants for financial calculations
-RISK_FREE_RATE = 0.08  # Annual risk-free rate (8%)
-TRADING_DAYS = 252     # Number of trading days in a year
+# Define global constants
+RISK_FREE_RATE = 0.08  
+TRADING_DAYS = 252     
 
 # Store stock tickers in a list
-TICKERS = [
-	"FSR.JO",
-	"SBK.JO",
-	"NPN.JO",
-	"MTN.JO",
-	"AGL.JO"
-]
+TICKERS = ["FSR.JO", "SBK.JO", "NPN.JO", "MTN.JO", "AGL.JO"]
 
 # Cache dictionary to store downloaded stock data and avoid redundant API calls
 _data_cache = {}
@@ -29,12 +24,7 @@ def get_data(stock):
 	try:
 
 		# Download historical data for the specified stock
-		data = yf.download(
-			stock,
-			start="2022-01-01",
-			end="2025-01-01",
-			auto_adjust=True
-		)
+		data = yf.download(stock, start="2022-01-01", end="2025-01-01", auto_adjust=True)
 
 		# Check if data is empty
 		if data.empty:
@@ -45,15 +35,15 @@ def get_data(stock):
 		# Extract the closing prices and calculate daily returns
 		close_prices = np.array(data["Close"]).flatten()
 
-		# Check if there are enough data points to calculate returns
+		# Validate sufficiency of data points
 		if len(close_prices) < 2:
 			print(f"Error: Insufficient data for {stock}")
 			_data_cache[stock] = (None, None)
 			return None, None
 
 		# Calculate daily returns as the percentage change in closing prices
-		returns = np.diff(close_prices) / close_prices[:-1]  # Daily returns calculation
-		last_price = float(close_prices[-1])                  # Last closing price for the stock
+		returns = np.diff(close_prices) / close_prices[:-1]  
+		last_price = float(close_prices[-1])                 
 
 		# Store the result in the cache before returning
 		_data_cache[stock] = (returns, last_price)
@@ -65,7 +55,7 @@ def get_data(stock):
 		_data_cache[stock] = (None, None)
 		return None, None
 
-# Define a function to clear the data cache (useful for refreshing data)
+# Define a function to clear the data cache
 def clear_cache():
 	_data_cache.clear()
 	print("Data cache cleared successfully")
@@ -75,6 +65,7 @@ def analyse_stock(stock):
 
 	# Implement error handling
 	try:
+
 		# Get the returns and last price for the specified stock
 		returns, last_price = get_data(stock)
 
@@ -152,12 +143,16 @@ def compare_stocks(stock1, stock2):
 
 # Define a function to rank stocks based on their Sharpe ratio
 def rank_stocks():
+
+	# Implement error handling
 	try:
+
 		# Initialize an empty list to store the results for each stock
 		results = []
 
-		# Loop through each ticker and calculate its return, volatility, and Sharpe ratio
+		# Loop through each stock and calculate its return, volatility, and Sharpe ratio
 		for stock in TICKERS:
+
 			# Get the returns and last price for the current stock
 			returns, _ = get_data(stock)
 
@@ -169,7 +164,7 @@ def rank_stocks():
 			r = np.mean(returns) * TRADING_DAYS
 			v = np.std(returns) * np.sqrt(TRADING_DAYS)
 
-			# Calculate the Sharpe ratio using the defined risk-free rate constant
+			# Calculate the Sharpe ratio
 			sharpe = (r - RISK_FREE_RATE) / v if v != 0 else 0
 
 			# Append the stock, return, volatility, and Sharpe ratio to the results list
@@ -197,79 +192,64 @@ def rank_stocks():
 	except Exception as e:
 		print(f"Error ranking stocks: {str(e)}")
 
-# Define a function to perform a vectorised Monte Carlo simulation for a stock's future price
+# Define a function to perform a Monte Carlo simulation for a stock's future price
 def monte_carlo(stock):
+
+	# Implement error handling
 	try:
+
 		# Get the returns and last price for the specified stock
 		returns, last_price = get_data(stock)
 
+		# Check if returns and last price were successfully retrieved
 		if returns is None or last_price is None:
 			return
 
-		# Set simulation parameters
-		n_sim = 1000
-		n_days = TRADING_DAYS
-
-		# Improve simulation realism by using mean + std of historical returns
+		# Calculate mean and std from historical returns
 		mean_ret = np.mean(returns)
 		std_ret = np.std(returns)
 
-		# Generate random normal shocks based on historical distribution
-		rand_returns = np.random.normal(
-			mean_ret,
-			std_ret,
-			(n_days, n_sim)
-		)
+		# Generate paths and collect final prices
+		final_prices = []
 
-		# Calculate all simulated price paths in a single vectorised operation
-		sim = last_price * np.vstack([
-			np.ones(n_sim),
-			np.cumprod(1 + rand_returns, axis=0)
-		])
+		# Set up the plot for the Monte Carlo simulation
+		plt.figure(figsize=(10, 5))
 
-		# Get the final simulated prices after the specified number of days
-		final = sim[-1]
+		# Simulate 500 paths of future stock prices over the next trading year
+		for i in range(500):
+			prices = [last_price]
+			for day in range(TRADING_DAYS):
+				daily_return = np.random.normal(mean_ret, std_ret)
+				new_price = prices[-1] * (1 + daily_return)
+				prices.append(new_price)
+			final_prices.append(prices[-1])
+			plt.plot(prices, alpha=0.1, linewidth=0.8)
 
-		# Calculate statistics
-		expected_price = np.mean(final)
-		std_price = np.std(final)
-		prob_loss = (final < last_price).mean()
-		prob_gain = (final > last_price).mean()
-		confidence_interval_95 = (np.percentile(final, 2.5), np.percentile(final, 97.5))
+		# Compute statistics
+		final_prices = np.array(final_prices)
+		expected_price = np.mean(final_prices)
+		prob_loss = (final_prices < last_price).mean()
+		prob_gain = (final_prices > last_price).mean()
+		ci_95 = (np.percentile(final_prices, 2.5), np.percentile(final_prices, 97.5))
 
-		# Print the results of the Monte Carlo simulation
+		# Print results
 		print("\n" + "="*50)
 		print(f"Monte Carlo Simulation Results for {stock}")
 		print("="*50)
-		print(f"Simulations: {n_sim}")
-		print(f"Time Horizon: {n_days} trading days (1 year)")
-		print(f"Starting Price: R{round(last_price, 2)}")
-		print(f"\nExpected Price: R{round(expected_price, 2)}")
-		print(f"Standard Deviation: R{round(std_price, 2)}")
-		print(f"95% Confidence Interval: [R{round(confidence_interval_95[0], 2)}, R{round(confidence_interval_95[1], 2)}]")
-		print(f"\nProbability of Loss: {round(prob_loss*100, 2)}%")
-		print(f"Probability of Gain: {round(prob_gain*100, 2)}%")
+		print(f"Starting Price:      R{round(last_price, 2)}")
+		print(f"Expected Price:      R{round(expected_price, 2)}")
+		print(f"95% CI:              [R{round(ci_95[0], 2)}, R{round(ci_95[1], 2)}]")
+		print(f"Probability of gain: {round(prob_gain*100, 2)}%")
+		print(f"Probability of loss: {round(prob_loss*100, 2)}%")
 		print("="*50)
 
-		import matplotlib.pyplot as plt
-
-		# Plot a subset of paths for clarity
-		plt.figure(figsize=(10, 5))
-
-		# Plot only 50 paths to avoid clutter
-		for i in range(50):
-			plt.plot(sim[:, i], alpha=0.2)
-
-		# Highlight median path
-		median_path = np.median(sim, axis=1)
-		plt.plot(median_path, linewidth=2, label="Median Path")
-
-		plt.title(f"Monte Carlo Simulation - {stock}")
+		# Plot
+		plt.axhline(last_price, color='black', linewidth=1.5, linestyle='--', label='Starting price')
+		plt.title(f"Monte Carlo Simulation — {stock} — 500 paths over {TRADING_DAYS} days")
 		plt.xlabel("Days")
-		plt.ylabel("Simulated Price (R)")
+		plt.ylabel("Price (R)")
 		plt.legend()
 		plt.grid(True, alpha=0.3)
-
 		plt.tight_layout()
 		plt.show()
 
@@ -372,6 +352,8 @@ def select_two_stocks():
 
 # Main program with while loop controlled by a variable
 def main():
+
+	# Use a boolean variable to control the program
 	running = True
 
 	# Loop to display the menu and execute user-selected options until the user chooses to exit
@@ -390,7 +372,7 @@ def main():
 		# Get the user's choice from the menu
 		choice = input("\nSelect option (1-7): ")
 
-		# Execute the corresponding function based on the user's choice
+		# Analyse a single stock
 		if choice == "1":
 			stock = select_stock("Select stock to analyze:")
 			if stock:
